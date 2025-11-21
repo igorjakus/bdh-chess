@@ -4,31 +4,23 @@ import os
 from contextlib import nullcontext
 
 import bdh
+import httpx
 import numpy as np
-import requests
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # On a Mac you can also try
 # device=torch.device('mps')
 
 dtype = (
-    "bfloat16"
-    if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
-    else "float16"
+    "bfloat16" if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else "float16"
 )  # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
 ptdtype = {
     "float32": torch.float32,
     "bfloat16": torch.bfloat16,
     "float16": torch.float16,
 }[dtype]
-ctx = (
-    torch.amp.autocast(device_type=device.type, dtype=ptdtype)
-    if "cuda" in device.type
-    else nullcontext()
-)
+ctx = torch.amp.autocast(device_type=device.type, dtype=ptdtype) if "cuda" in device.type else nullcontext()
 scaler = torch.amp.GradScaler(device=device.type, enabled=(dtype == "float16"))
 torch.manual_seed(1337)
 torch.backends.cuda.matmul.allow_tf32 = True  # allow tf32 on matmul
@@ -53,7 +45,7 @@ def fetch_data():
     if not os.path.exists(input_file_path):
         data_url = "https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt"
         with open(input_file_path, "w") as f:
-            f.write(requests.get(data_url).text)
+            f.write(httpx.get(data_url).text)
 
 
 def get_batch(split):
@@ -64,19 +56,13 @@ def get_batch(split):
     else:
         data = data[int(0.9 * len(data)) :]
     ix = torch.randint(len(data) - BLOCK_SIZE, (BATCH_SIZE,))
-    x = torch.stack(
-        [torch.from_numpy((data[i : i + BLOCK_SIZE]).astype(np.int64)) for i in ix]
-    )
-    y = torch.stack(
-        [
-            torch.from_numpy((data[i + 1 : i + 1 + BLOCK_SIZE]).astype(np.int64))
-            for i in ix
-        ]
-    )
+    x = torch.stack([torch.from_numpy((data[i : i + BLOCK_SIZE]).astype(np.int64)) for i in ix])
+    y = torch.stack([torch.from_numpy((data[i + 1 : i + 1 + BLOCK_SIZE]).astype(np.int64)) for i in ix])
     if torch.cuda.is_available():
         # pin arrays x,y, which allows us to move them to GPU asynchronously (non_blocking=True)
-        x, y = x.pin_memory().to(device, non_blocking=True), y.pin_memory().to(
-            device, non_blocking=True
+        x, y = (
+            x.pin_memory().to(device, non_blocking=True),
+            y.pin_memory().to(device, non_blocking=True),
         )
     else:
         x, y = x.to(device), y.to(device)
@@ -92,9 +78,7 @@ if __name__ == "__main__":
 
     model = bdh.BDH(BDH_CONFIG).to(device)
     model = torch.compile(model)
-    optimizer = torch.optim.AdamW(
-        model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY
-    )
+    optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
     x, y = get_batch("train")
 
@@ -116,11 +100,7 @@ if __name__ == "__main__":
             loss_steps = 0
     print("Training done, now generating a sample ")
     model.eval()
-    prompt = torch.tensor(
-        bytearray("To be or ", "utf-8"), dtype=torch.long, device=device
-    ).unsqueeze(0)
+    prompt = torch.tensor(bytearray("To be or ", "utf-8"), dtype=torch.long, device=device).unsqueeze(0)
     ret = model.generate(prompt, max_new_tokens=100, top_k=3)
-    ret_decoded = bytes(ret.to(torch.uint8).to("cpu").squeeze(0)).decode(
-        errors="backslashreplace"
-    )
+    ret_decoded = bytes(ret.to(torch.uint8).to("cpu").squeeze(0)).decode(errors="backslashreplace")
     print(ret_decoded)

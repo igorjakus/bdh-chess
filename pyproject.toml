@@ -1,0 +1,10 @@
+[project]
+name = "bdh-chess"
+version = "0.1.0"
+description = "Chess Engine using BDH architecture"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = ["httpx>=0.28.1", "numpy>=2.3.5", "torch>=2.9.1"]
+
+[dependency-groups]
+dev = ["ruff>=0.14.5"]
